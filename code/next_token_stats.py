@@ -159,7 +159,7 @@ def main() -> None:
         prompt_neg_log_prob_sum = 0.0
         prompt_token_count = 0
 
-        print("# Prompt token statistics (model's prob of each prompt token)")
+        print("# Prompt token statistics")
         print(
             "position,token,token_id,probability,logit,rank,"
             "entropy_bits,skewness,kurtosis,incremental_ppl"
@@ -224,7 +224,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     if args.completion_tokens > 0:
         print(
-            "# Completion token statistics (model's prob of its generated tokens)"
+            "# Completion token statistics"
         )
         print(
             "position,token,token_id,probability,logit,rank,"
