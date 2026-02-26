@@ -1,4 +1,4 @@
-# Stephhan Raaijmakers, 2026
+# Stephan Raaijmakers, 2026
 import argparse
 import math
 from typing import Tuple
