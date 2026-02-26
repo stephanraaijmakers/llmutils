@@ -4,7 +4,10 @@ import math
 from typing import Tuple
 import numpy as np
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, logging as hf_logging
+
+# Silence most Transformers warnings (e.g. generation flag notices)
+hf_logging.set_verbosity_error()
 
 
 def select_device(dev: str | None = None) -> str:
@@ -152,10 +155,14 @@ def main() -> None:
     # ------------------------------------------------------------------
     seq_len = input_ids.shape[1]
     if seq_len > 1:
+        # For perplexity over the prompt tokens we actually predict
+        prompt_neg_log_prob_sum = 0.0
+        prompt_token_count = 0
+
         print("# Prompt token statistics (model's prob of each prompt token)")
         print(
             "position,token,token_id,probability,logit,rank,"
-            "entropy_bits,skewness,kurtosis"
+            "entropy_bits,skewness,kurtosis,incremental_ppl"
         )
 
         for pos in range(seq_len - 1):
@@ -178,6 +185,15 @@ def main() -> None:
             # Rank of the actual token among all vocabulary items
             rank = int((step_probs > prob).sum().item()) + 1
 
+            # Accumulate for prompt perplexity (natural-log cross-entropy)
+            prompt_neg_log_prob_sum += -math.log(prob + 1e-20)
+            prompt_token_count += 1
+
+            # Incremental perplexity up to this prompt token
+            incremental_ppl = math.exp(
+                prompt_neg_log_prob_sum / prompt_token_count
+            )
+
             # position is 1-based index of the token in the prompt
             position = pos + 2
 
@@ -190,7 +206,15 @@ def main() -> None:
                 f"{rank},"
                 f"{entropy_bits:.8f},"
                 f"{skewness:.8f},"
-                f"{kurtosis:.8f}"
+                f"{kurtosis:.8f},"
+                f"{incremental_ppl:.4f}"
+            )
+
+        if prompt_token_count > 0:
+            prompt_ppl = math.exp(prompt_neg_log_prob_sum / prompt_token_count)
+            print(
+                f"# Prompt perplexity over {prompt_token_count} predicted tokens: "
+                f"{prompt_ppl:.4f}"
             )
 
         print()
@@ -204,7 +228,7 @@ def main() -> None:
         )
         print(
             "position,token,token_id,probability,logit,rank,"
-            "entropy_bits,skewness,kurtosis"
+            "entropy_bits,skewness,kurtosis,incremental_ppl"
         )
 
         with torch.no_grad():
@@ -223,6 +247,9 @@ def main() -> None:
             if new_tokens > 0:
                 gen_outputs = model(input_ids=generated_ids)
                 gen_logits = gen_outputs.logits
+
+                completion_neg_log_prob_sum = 0.0
+                completion_token_count = 0
 
                 for i in range(new_tokens):
                     token_index = orig_len + i
@@ -245,6 +272,15 @@ def main() -> None:
                     logit = float(step_logits[token_id])
                     rank = int((step_probs > prob).sum().item()) + 1
 
+                    # Accumulate for completion perplexity
+                    completion_neg_log_prob_sum += -math.log(prob + 1e-20)
+                    completion_token_count += 1
+
+                    # Incremental perplexity up to this completion token
+                    completion_incremental_ppl = math.exp(
+                        completion_neg_log_prob_sum / completion_token_count
+                    )
+
                     # position is 1-based index within the completion
                     position = i + 1
 
@@ -257,7 +293,18 @@ def main() -> None:
                         f"{rank},"
                         f"{entropy_bits:.8f},"
                         f"{skewness:.8f},"
-                        f"{kurtosis:.8f}"
+                        f"{kurtosis:.8f},"
+                        f"{completion_incremental_ppl:.4f}"
+                    )
+
+                if completion_token_count > 0:
+                    completion_ppl = math.exp(
+                        completion_neg_log_prob_sum / completion_token_count
+                    )
+                    print(
+                        "# Completion perplexity over "
+                        f"{completion_token_count} generated tokens: "
+                        f"{completion_ppl:.4f}"
                     )
 
                 print()
